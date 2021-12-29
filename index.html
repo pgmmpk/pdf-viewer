@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Test</title>
+    <meta name="description" content="Testing pdf.js">
+    <meta name="author" content="GramThanos">
+</head>
+
+<body>
+    <script src="https://mozilla.github.io/pdf.js/build/pdf.js"></script>
+    <input id="file" type='file' accept='application/pdf' onchange='openFile(event)'>
+
+    <button id="down" onclick="scrollDown()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+                d="M16.707 10.293a1 1 0 010 1.414l-6 6a1 1 0 01-1.414 0l-6-6a1 1 0 111.414-1.414L9 14.586V3a1 1 0 012 0v11.586l4.293-4.293a1 1 0 011.414 0z"
+                clip-rule="evenodd" />
+        </svg>
+    </button>
+    <button id="clear" onclick="closeFile()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clip-rule="evenodd" />
+        </svg>
+    </button>
+    <button id="up" onclick="scrollUp()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd"
+                d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z"
+                clip-rule="evenodd" />
+        </svg>
+    </button>
+    <div id="scene">
+    </div>
+
+    <style>
+        body {
+            margin: 0;
+        }
+        canvas {
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            margin-top: 4px;
+            margin-bottom: 4px;
+            border: 1px solid gray;
+        }
+        div#scene {
+            display: block;
+            background-color: lightgray;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        button#down {
+            right: 10px;
+            bottom: 10px;
+        }
+        button#up {
+            right: 10px;
+            top: 10px;
+        }
+        button#clear {
+            right: 10px;
+            top: calc(50% - 2em);
+        }
+        button {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.15);
+            color: rgba(0, 0, 0, 0.3);
+            width: 4em;
+            height: 4em;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+        }
+        input {
+            display: block;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%) scale(2);
+        }
+    </style>
+
+    <script>
+        let thePdf;
+        const scale = 4;
+        const scene = document.getElementById('scene');
+        const input = document.getElementById('file');
+
+        let sceneWidth = scene.clientWidth;
+
+        new ResizeObserver((x) => {
+            if (sceneWidth === scene.clientWidth) {
+                return;
+            }
+            sceneWidth = scene.clientWidth;
+            repaint(scene);
+            repaint(scene, thePdf);
+        }).observe(scene);
+
+        async function repaint(scene, pdf) {
+            if (!pdf) {
+                while(scene.firstChild) {
+                    scene.removeChild(scene.firstChild);
+                }
+                return;
+            }
+
+            for (let i = 0; i < pdf.numPages; i++) {
+                const page = await pdf.getPage(i + 1);
+                const viewport = page.getViewport({ scale });
+                const canvas = document.createElement('canvas');
+
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                const aspect = viewport.width / viewport.height;
+
+                canvas.style.height = `${sceneWidth / aspect - 8}px`;
+                canvas.style.width = `${sceneWidth - 8}px`;
+                canvas.style.backgroundColor = '#ccc';
+
+                scene.appendChild(canvas);
+
+                const observer = new IntersectionObserver(events => {
+                    if (events[0].isIntersecting) {
+                        page.render({
+                            canvasContext: canvas.getContext('2d'),
+                            viewport,
+                        });
+                        observer.disconnect();
+                    }
+                }, {
+                    root: scene,
+                    rootMargin: '0px',
+                    threshold: 0,
+                });
+                observer.observe(canvas);
+            }
+        }
+
+        function openFile(event) {
+            const input = event.target;
+
+            const reader = new FileReader();
+            reader.onload = async function () {
+                const pdfjsLib = window['pdfjs-dist/build/pdf'];
+
+                // The workerSrc property shall be specified.
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://mozilla.github.io/pdf.js/build/pdf.worker.js';
+
+                thePdf = await pdfjsLib.getDocument({
+                    data: reader.result,
+                }).promise;
+
+                repaint(scene);  // clear previous pdf if any
+                repaint(scene, thePdf);  // render new pdf
+                input.style.display = 'none';
+            };
+            reader.readAsArrayBuffer(input.files[0]);
+        };
+
+        function scrollDown() {
+            const sh = scene.clientHeight;
+            const st = scene.scrollTop;
+
+            scene.scroll({
+                top: st + 0.5 * sh,
+                behavior: 'smooth',
+            });
+        }
+
+        function scrollUp() {
+            const sh = scene.clientHeight;
+            const st = scene.scrollTop;
+
+            scene.scroll({
+                top: st - 0.5 * sh,
+                behavior: 'smooth',
+            });
+        }
+
+        function closeFile() {
+            thePdf = undefined;
+            repaint(scene);
+            input.style.display = 'block';
+            input.value = null;
+        }
+
+        document.addEventListener('keydown', event => {
+            if (event.code === 'PageDown') {
+                event.preventDefault();
+                scrollDown();
+            } else if (event.code === 'PageUp') {
+                event.preventDefault();
+                scrollUp();
+            }
+        });
+    </script>
+</body>
+
+</html>
